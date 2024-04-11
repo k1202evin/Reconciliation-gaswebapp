@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <style>
+    .disabled-button {
+      background-color: #ccc; /* 灰色背景 */
+      color: #888; /* 灰色文本颜色 */
+      cursor: not-allowed; /* 鼠标指针样式为不可点击 */
+    }
+  </style>
+  <!-- 引入 Clipboard.js 用于复制文本 -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/clipboard.js/2.0.8/clipboard.min.js"></script>
+</head>
+<body>
+
+<label for="paymentSelect">選擇付款單：</label>
+<select id="paymentSelect"></select>
+
+<label for="worksheetSelect">選擇交易明細：</label>
+<select id="worksheetSelect"></select>
+
+<button onclick="performReconciliation()">執行對帳</button>
+
+  <label for="personnelCode">人員代號：</label>
+  <input type="text" id="personnelCode"> 
+
+  <h1>查找帳號</h1>
+  <label for="lastFiveDigits">帳戶後五碼：</label>
+  <input type="text" id="lastFiveDigits" onkeydown="if (event.key === 'Enter') findAccount()">
+  <button onclick="findAccount()">查找</button>
+  <br><br>
+  <label for="name"> 匯款關鍵字： </label>
+  <input type="text" id="name" onkeydown="if (event.key === 'Enter') findname()">
+  <button onclick="findname()">查找</button>
+
+  <div id="result"></div>
+  <div id="resultPaid"></div>
+  <div id="resultPending"></div>
+
+<script src="1bU38faGJ49iUsKAVzdqJLfl-Yq7rq9bD5tlzxWRXkFU"></script>
+
+
+  <script>
+  window.onload = function() {
+  google.script.run.withSuccessHandler(function(headers) {
+    // 将标题存储在全局变量中以供整个页面使用
+    window.headers = headers;
+
+    // 初始化变量
+    var ccount = -1;
+    var acc = -1;
+    var date = -1;
+    var amount = -1;
+    var name = -1;
+    var bank = -1;
+    var confirmUser = -1;
+
+    for (var i = 0; i < headers.length; i++) {
+      if (headers[i] == "確認次數")
+        ccount = i;
+      else if (headers[i] == "對方帳號")
+        acc = i;
+      else if (headers[i] == "交易日")
+        date = i;
+      else if (headers[i] == "存入金額")
+        amount = i;
+      else if (headers[i] == "備註")
+        name = i;
+      else if (headers[i] == "交易分行")
+        bank = i;
+      else if (headers[i] == "查帳確認人員")
+        confirmUser = i;
+    }
+
+    // 存储这些变量以供后续使用
+    window.name = name;
+    window.ccount = ccount;
+    window.acc = acc;
+    window.date = date;
+    window.amount = amount;
+    window.bank = bank;
+    window.confirmUser = confirmUser;
+    var worksheetSelect = document.getElementById("worksheetSelect");
+    window.selectedWorksheet = worksheetSelect.value;
+  }).getHeaders();
+
+  google.script.run.withSuccessHandler(function(worksheets) {
+    var worksheetSelect = document.getElementById("worksheetSelect");
+    // 清除现有选项
+    worksheetSelect.innerHTML = '';
+    // 添加新的选项
+    worksheets.forEach(function(worksheet) {
+      var option = document.createElement("option");
+      option.value = worksheet;
+      option.text = worksheet;
+      worksheetSelect.appendChild(option);
+    });
+  }).getWorksheets();
+
+  google.script.run.withSuccessHandler(function(paymentOptions) {
+    var paymentSelect = document.getElementById("paymentSelect");
+    // 清除现有选项
+    paymentSelect.innerHTML = '';
+    // 添加新的选项
+    paymentOptions.forEach(function(paymentOption) {
+      var option = document.createElement("option");
+      option.value = paymentOption;
+      option.text = paymentOption;
+      paymentSelect.appendChild(option);
+    });
+  }).getPaymentOptions();
+}
+
+    function findAccount() {
+      var lastFiveDigits = document.getElementById("lastFiveDigits").value;
+      var selected = document.getElementById("worksheetSelect").value;
+      // 调用 Google Apps Script 函数
+      google.script.run.withSuccessHandler(displayResults).findAccountByLastFiveDigits(lastFiveDigits,selected);
+    }
+
+    function findname() {
+      var name = document.getElementById("name").value;
+      var selected = document.getElementById("worksheetSelect").value;
+      // 调用 Google Apps Script 函数
+      google.script.run.withSuccessHandler(displayResults).findAccountByname(name,selected);
+    }
+
+    function confirmAccount(rowIndex) {
+      var button = document.getElementById('button-' + rowIndex);
+      var personnelCode = document.getElementById("personnelCode").value; // 获取人员代号的值
+      var selected = document.getElementById("worksheetSelect").value; // 获取选定的工作表
+
+      if (!button.disabled) {
+        google.script.run.withSuccessHandler(function(updatedCount) {
+        alert("確認操作已執行。Index: " + rowIndex + "，確認次数：" + updatedCount);
+        button.disabled = true; // 禁用按钮
+        button.classList.add("disabled-button"); // 添加CSS类以显示灰色样式
+        }).confirmAccountInSheet(rowIndex, personnelCode, selected); // 将人员代号和选定的工作表传递给 Google Apps Script
+      }
+    }
+
+
+    function performReconciliation() {
+      var selectedPayment = document.getElementById("paymentSelect").value;
+      var selectedWorksheet = document.getElementById("worksheetSelect").value;
+      var personnelCode = document.getElementById("personnelCode").value;
+
+      google.script.run.withSuccessHandler(function(results) {
+        displayReconciliationResults(results);
+      }).performReconciliation(selectedPayment, selectedWorksheet,personnelCode);
+    }
+
+    function formatDate(dateStr) {
+      if (dateStr.length == 7) {
+        var year =  1911 + parseInt(dateStr.substring(0, 3));
+        var month = dateStr.substring(3, 5);
+        var day = dateStr.substring(5, 7);
+        return year + "/" + month + "/" + day;
+      }
+    }
+
+    function displayReconciliationResults(results) {
+      var resultDivPaid = document.getElementById("resultPaid");
+      var resultDivPending = document.getElementById("resultPending");
+
+      var paidAccounts = results.paid; // 包含已匯款的帳號信息的数组
+      var pendingAccounts = results.pending; // 包含待確認的帳號信息的数组
+
+      displayPaidResultsTable(resultDivPaid, paidAccounts, "已匯款");
+
+      displayPendingResultsTable(resultDivPending, pendingAccounts, "待確認");
+    }
+
+
+    function displayPaidResultsTable(resultDiv, accounts, status) {
+      console.log(resultDiv);
+      var resultHTML = '<h2>' + status + '的帳號信息：</h2><table style="border-collapse: collapse; width: 100%;">';
+      resultHTML += '<thead><tr style="background-color: #f2f2f2;">';
+      resultHTML += '<th style="border: 1px solid #ddd; padding: 7px;">所在行數</th>';
+      resultHTML += '<th style="border: 1px solid #ddd; padding: 7px;">交易日</th>';
+      resultHTML += '<th style="border: 1px solid #ddd; padding: 7px;">金額</th>';
+      resultHTML += '<th style="border: 1px solid #ddd; padding: 7px;">帳號</th>';
+      resultHTML += '<th style="border: 1px solid #ddd; padding: 7px;">備註</th>';
+      resultHTML += '<th style="border: 1px solid #ddd; padding: 7px;">交易分行</th>';
+      resultHTML += '<th style="border: 1px solid #ddd; padding: 7px;">確認人員</th>';
+      resultHTML += '<th style="border: 1px solid #ddd; padding: 7px;">確認次數</th>';
+      resultHTML += '<th style="border: 1px solid #ddd; padding: 7px;">確認</th>';
+      resultHTML += '<th style="border: 1px solid #ddd; padding: 7px;">複製</th>';
+      resultHTML += '</tr></thead>';
+      resultHTML += '<tbody>';
+    if (accounts.length > 0) {
+        for (var i = 0; i < accounts.length; i++) {
+          var accountData = accounts[i].data;
+          var accountNumber = accountData[window.acc];
+          var confirmCount = accountData[window.ccount];
+          var rowIndex = accounts[i].row;
+          resultHTML += '<tr style="background-color: #fff;">';
+          resultHTML += '<td style="border: 1px solid #ddd; padding: 7px;">' + rowIndex + '</td>';
+          resultHTML += '<td style="border: 1px solid #ddd; padding: 7px;">' + accountData[window.date] + '</td>';
+          resultHTML += '<td style="border: 1px solid #ddd; padding: 7px;">' + accountData[window.amount] + '</td>';
+          resultHTML += '<td style="border: 1px solid #ddd; padding: 7px;">' + accountNumber + '</td>';
+          resultHTML += '<td style="border: 1px solid #ddd; padding: 7px;">' + accountData[window.name] + '</td>';
+          resultHTML += '<td style="border: 1px solid #ddd; padding: 7px;">' + accountData[window.bank] + '</td>';
+          resultHTML += '<td style="border: 1px solid #ddd; padding: 7px;">' + accountData[window.confirmUser] + '</td>';
+          resultHTML += '<td style="border: 1px solid #ddd; padding: 7px;">' + confirmCount + '</td>';
+          resultHTML += '<td style="border: 1px solid #ddd; padding: 7px;"><button onclick="confirmAccount(' + (rowIndex) + ')" id="button-' + rowIndex + '">確認</button></td>';
+          resultHTML += '<td style="border: 1px solid #ddd; padding: 7px;"><button class="copy-button" data-clipboard-text="' + formatDate(accountData[window.date].toString()) + '匯款國泰後五碼' + document.getElementById("lastFiveDigits").value + '$' + '金額' + accountData[window.amount] + '*' + document.getElementById("personnelCode").value + '">複製</button></td>';
+    }
+    } else {
+    resultHTML += '<tr><td colspan="10" style="border: 1px solid #ddd; padding: 7px; text-align: center;">未找到匹配的帳號。</td></tr>';
+  }
+  resultHTML += '</tbody></table>';
+  resultDiv.innerHTML = resultHTML;
+}
+
+function displayPendingResultsTable(resultDiv, accounts, status) {
+  console.log(resultDiv);
+  var resultHTML = '<h2>' + status + '的帳號信息：</h2><table style="border-collapse: collapse; width: 100%;">';
+  resultHTML += '<thead><tr style="background-color: #f2f2f2;">';
+  resultHTML += '<th style="border: 1px solid #ddd; padding: 10px;">所在行數</th>';
+  resultHTML += '<th style="border: 1px solid #ddd; padding: 10px;">末五碼</th>';
+  resultHTML += '<th style="border: 1px solid #ddd; padding: 10px;">金額</th>';
+  resultHTML += '<th style="border: 1px solid #ddd; padding: 10px;">FB帳號</th>';
+  resultHTML += '<th style="border: 1px solid #ddd; padding: 10px;">收件人</th>';
+  resultHTML += '<th style="border: 1px solid #ddd; padding: 10px;">備註</th>';
+  resultHTML += '</tr></thead>';
+  resultHTML += '<tbody>';
+  if (accounts.length > 0) {
+    for (var i = 0; i < accounts.length; i++) {
+      var accountData = accounts[i].data;
+      var accountNumber = accountData[window.acc - 1];
+      var confirmCount = accountData[window.ccount];
+      var rowIndex = accounts[i].row;
+
+      var comment = accountData[window.bank + 9]; // 获取備註
+      var maxCommentLength = 70; // 设置最大備註长度
+      var truncatedComment = comment.length > maxCommentLength ? comment.slice(0, maxCommentLength) + '...' : comment;
+
+      resultHTML += '<tr style="background-color: #fff;">';
+      resultHTML += '<td style="border: 1px solid #ddd; padding: 10px;">' + rowIndex + '</td>';
+      resultHTML += '<td style="border: 1px solid #ddd; padding: 10px;">' + accountData[7] + '</td>';
+      resultHTML += '<td style="border: 1px solid #ddd; padding: 10px;">' + accountData[14] + '</td>';
+      resultHTML += '<td style="border: 1px solid #ddd; padding: 10px;">' + accountData[5] + '</td>';
+      resultHTML += '<td style="border: 1px solid #ddd; padding: 10px;">' + accountData[15] + '</td>';
+      resultHTML += '<td style="border: 1px solid #ddd; padding: 10px;">' + accountData[19] + '</td>';
+    }
+  } else {
+    resultHTML += '<tr><td colspan="10" style="border: 1px solid #ddd; padding: 7px; text-align: center;">未找到匹配的帳號。</td></tr>';
+  }
+  resultHTML += '</tbody></table>';
+  resultDiv.innerHTML = resultHTML;
+}
+
+    function displayResults(data) {
+      var resultDiv = document.getElementById("result");
+      var resultHTML = '<h2>匹配的帳號信息：</h2><table style="border-collapse: collapse; width: 100%;">';
+      resultHTML += '<thead><tr style="background-color: #f2f2f2;">';
+      resultHTML += '<th style="border: 1px solid #ddd; padding: 7px;">所在行數</th>';
+      resultHTML += '<th style="border: 1px solid #ddd; padding: 7px;">交易日</th>';
+      resultHTML += '<th style="border: 1px solid #ddd; padding: 7px;">金額</th>';
+      resultHTML += '<th style="border: 1px solid #ddd; padding: 7px;">帳號</th>';
+      resultHTML += '<th style="border: 1px solid #ddd; padding: 7px;">備註</th>';
+      resultHTML += '<th style="border: 1px solid #ddd; padding: 7px;">交易分行</th>';
+      resultHTML += '<th style="border: 1px solid #ddd; padding: 7px;">確認人員</th>';
+      resultHTML += '<th style="border: 1px solid #ddd; padding: 7px;">確認次數</th>';
+      resultHTML += '<th style="border: 1px solid #ddd; padding: 7px;">確認</th>';
+      resultHTML += '<th style="border: 1px solid #ddd; padding: 7px;">複製</th>';
+      resultHTML += '</tr></thead>';
+      resultHTML += '<tbody>';
+
+      var accounts = JSON.parse(data);
+      if (accounts.length > 0) {
+        for (var i = 0; i < accounts.length; i++) {
+          var accountData = accounts[i].data;
+          var accountNumber = accountData[window.acc];
+          var confirmCount = accountData[window.ccount];
+          var rowIndex = accounts[i].row;
+
+          resultHTML += '<tr style="background-color: #fff;">';
+          resultHTML += '<td style="border: 1px solid #ddd; padding: 7px;">' + rowIndex + '</td>';
+          resultHTML += '<td style="border: 1px solid #ddd; padding: 7px;">' + accountData[window.date] + '</td>';
+          resultHTML += '<td style="border: 1px solid #ddd; padding: 7px;">' + accountData[window.amount] + '</td>';
+          resultHTML += '<td style="border: 1px solid #ddd; padding: 7px;">' + accountNumber + '</td>';
+          resultHTML += '<td style="border: 1px solid #ddd; padding: 7px;">' + accountData[window.name] + '</td>';
+          resultHTML += '<td style="border: 1px solid #ddd; padding: 7px;">' + accountData[window.bank] + '</td>';
+          resultHTML += '<td style="border: 1px solid #ddd; padding: 7px;">' + accountData[window.confirmUser] + '</td>';
+          resultHTML += '<td style="border: 1px solid #ddd; padding: 7px;">' + confirmCount + '</td>';
+          resultHTML += '<td style="border: 1px solid #ddd; padding: 7px;"><button onclick="confirmAccount(' + (rowIndex) + ')" id="button-' + rowIndex + '">確認</button></td>';
+          resultHTML += '<td style="border: 1px solid #ddd; padding: 7px;"><button class="copy-button" data-clipboard-text="' + formatDate(accountData[window.date].toString()) + '匯款國泰後五碼' + document.getElementById("lastFiveDigits").value + '$' + '金額' + accountData[window.amount] + '*' + document.getElementById("personnelCode").value + '">複製</button></td>';
+
+        }
+      } else {
+          resultHTML += '<tr><td colspan="10" style="border: 1px solid #ddd; padding: 7px; text-align: center;">未找到匹配的帳號。</td></tr>';
+      }
+      resultHTML += '</tbody></table>';
+      resultHTML += '</ul>';
+      resultDiv.innerHTML = resultHTML;
+      // 初始化Clipboard.js
+      new ClipboardJS('.copy-button');
+    }
+    document.addEventListener('DOMContentLoaded', function () {
+      var clipboard = new ClipboardJS('.copy-button');
+
+      clipboard.on('success', function(e) {
+        alert("已複製文本: " + e.text);
+      });
+
+      clipboard.on('error', function(e) {
+        alert("複製文本失败，請手動複製文本: " + e.text);
+      });
+    });
+  </script>
+</body>
+</html>
+
